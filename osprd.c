@@ -107,6 +107,9 @@ static void for_each_open_file(struct task_struct *task,
  */
 static void osprd_process_request(osprd_info_t *d, struct request *req)
 {
+	int d_size = req->current_nr_sectors * SECTOR_SIZE;
+	int offset = req->sector * SECTOR_SIZE;
+
 	if (!blk_fs_request(req)) {
 		end_request(req, 0);
 		return;
@@ -121,8 +124,15 @@ static void osprd_process_request(osprd_info_t *d, struct request *req)
 	// 'req->buffer' members, and the rq_data_dir() function.
 
 	// Your code here.
-	eprintk("Should process request...\n");
-
+	if(rq_data_dir(req) == READ)
+		memcpy(req->buffer, d->data + offset, d_size);
+	else if(rq_data_dir(req) == WRITE)
+		memcpy(d->data + offset, req->buffer, d_size);
+	else
+	{
+		end_request(req, 0);
+		return;
+	}
 	end_request(req, 1);
 }
 
