@@ -16,7 +16,7 @@ Email: arlonghk@ucla.edu
 # Partner 2
 Name: Nabil Nathani
 Student ID: 803782632
-Email: Partner's Email Here
+Email: nabilnathani@ucla.edu	
 
 
 # Add any other information you'd like us to have below this line.
