@@ -1,4 +1,4 @@
-osprd.o: /home/williamho/Documents/lab2/osprd.c include/linux/autoconf.h \
+osprd.o: /home/nabilnathani/lab2/lab2/osprd.c include/linux/autoconf.h \
  include/linux/version.h include/linux/autoconf.h include/linux/module.h \
  include/linux/list.h include/linux/stddef.h include/linux/compiler.h \
  include/linux/compiler-gcc.h include/linux/compiler-gcc4.h \
@@ -222,5 +222,5 @@ osprd.o: /home/williamho/Documents/lab2/osprd.c include/linux/autoconf.h \
  include/asm-generic/iomap.h include/linux/bsg.h \
  /usr/src/linux-headers-2.6.32-24-generic/arch/x86/include/asm/scatterlist.h \
  include/asm-generic/scatterlist.h include/linux/elevator.h \
- include/linux/file.h /home/williamho/Documents/lab2/spinlock.h \
- /home/williamho/Documents/lab2/osprd.h
+ include/linux/file.h /home/nabilnathani/lab2/lab2/spinlock.h \
+ /home/nabilnathani/lab2/lab2/osprd.h
