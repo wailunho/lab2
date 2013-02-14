@@ -38,7 +38,7 @@
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("CS 111 RAM Disk");
 // EXERCISE: Pass your names into the kernel as the module's authors.
-MODULE_AUTHOR("Wai Lun Ho and Nabil Nathani");
+MODULE_AUTHOR("Wai Lun Ho\nNabil Nathani");
 
 #define OSPRD_MAJOR	222
 
@@ -69,11 +69,10 @@ typedef struct osprd_info {
 	/* HINT: You may want to add additional fields to help
 	         in detecting deadlock. */
 
-	int read_locks;			//number of read locks;
-	pid_t read_hold_pid[MAX_LOCKS];	//array of pids with read lock
-	pid_t read_wait_pid[MAX_LOCKS];	//array of pids waiting for read lock
-	
-	int write_lock;				//number of write locks 	0 or 1
+	int read_locks;				//number of read locks;
+	int write_lock;				//number of write locks
+	pid_t read_hold_pid[MAX_LOCKS];		//array of pids with a read lock
+	pid_t read_wait_pid[MAX_LOCKS];		//array of pids waiting for a read lock
 	pid_t write_lock_pid;			// write lock pid	0 of no write lock
 	pid_t write_wait_pid[MAX_LOCKS];	//array of pids waiting for a write lock
 
@@ -203,6 +202,7 @@ static int osprd_deadlock_check_disk(int disk, int * dir, int dir_index)
 	int x;
 	pid_t p_node;			//process node
 
+	//check if the disk on the travel path is deadlocked
 	for( x=0; x < dir_index; x++)
 	{
 		if(dir[x] == disk)
@@ -211,20 +211,25 @@ static int osprd_deadlock_check_disk(int disk, int * dir, int dir_index)
 		}
 	}
 
+	//check every lock that is held by the disk
 	for(x = -1; x < MAX_LOCKS; x++)
-	{
+	{	//find held locks
 		p_node = 0;
+		//handle write locks
 		if((x == -1) && osprds[disk].write_lock_pid !=0) {
 			p_node = osprds[disk].write_lock_pid;
 		}
+		//handle read locks
 		else if(osprds[disk].read_hold_pid != 0) {
 			p_node = osprds[disk].read_hold_pid[x];
 		}
 	}
 	
+	//find any held locks
 	if(p_node !=0)
 	{
 		dir[dir_index] = disk;
+		//if deadlocked
 		if(osprd_deadlock_check_process(p_node, dir, dir_index+1) == -1)
 		{
 			return -1;
@@ -240,6 +245,7 @@ static int osprd_deadlock_check_process(pid_t p_node, int* dir, int dir_index)
 	int x, y;
 	int disk;
 	
+	//check every lock held by the disk
 	for(x =0; x < NOSPRD; x++) {
 		for(y = 0; y < MAX_LOCKS; y++) {
 			disk = -1;
@@ -250,6 +256,7 @@ static int osprd_deadlock_check_process(pid_t p_node, int* dir, int dir_index)
 		
 			//find any disk waiting for a lock
 			if(disk != -1){
+				//deadlocked
 				if(osprd_deadlock_check_disk(disk, dir, dir_index) == -1)
 				{
 					return -1;
@@ -257,6 +264,8 @@ static int osprd_deadlock_check_process(pid_t p_node, int* dir, int dir_index)
 			}
 		}
 	}
+
+	//no deadlocks
 	return 0;
 }
 
@@ -264,6 +273,7 @@ static int osprd_detect_deadlock(void)
 {
 	int x;
 	int dir[NOSPRD];
+	//check every block disk to see if deadlocked
 	for(x =0; x < NOSPRD; x++)
 	{
 		if(osprd_deadlock_check_disk(x, dir, 0) == -1)
@@ -286,13 +296,14 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		unsigned int cmd, unsigned long arg)
 {
 	osprd_info_t *d = file2osprd(filp);	// device info
-	int r = 0;			// return value: initially 0
-	int x, o_slot;		//open slot
+	int r = 0;				// return value: initially 0
+	int x, o_slot;				//open slot
 	
 	if(d == NULL)
 	{
 		return -1;
 	}
+
 	// is file open for writing?
 	int filp_writable = (filp->f_mode & FMODE_WRITE) != 0;
 
@@ -343,16 +354,19 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		//r = -ENOTTY;
 
 		for(;;)
-		{
+		{	//set a lock
 			osp_spin_lock(&d->mutex);
 	
+			//file is writable, attempt to write lock
 			if(filp_writable)
 			{
 				if(d->write_lock==0 && d->read_locks==0)
 				{
+					//set write lock
 					d->write_lock_pid = current->pid;
 					filp->f_flags |= F_OSPRD_LOCKED;
 					d->write_lock++;
+
 					//remove from write_wait_pid
 					for(x = 0; x < MAX_LOCKS; x++)
 					{
@@ -362,13 +376,15 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 							break;
 						}
 					}
+					//unlock
 					osp_spin_unlock(&d->mutex);
 					break;
 				}
+				//write lock failed
 				else if (cmd == OSPRDIOCACQUIRE)
 				{
 					o_slot = -1;
-		
+					//add to write_wait_pid array
 					for(x = 0; x < MAX_LOCKS; x++)
 					{
 						if((o_slot == -1) && (d->write_wait_pid[x] == 0 ))
@@ -386,9 +402,12 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 				}
 
 			}
+			//attempt to read a lock
 			else {
+				//obtain read lock
 				if(d->write_lock == 0)
 				{
+					//add to read_hold_pid array
 					for(x=0; x < MAX_LOCKS; x++)
 					{
 						if(d->read_hold_pid[x]==0)
@@ -400,6 +419,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 					filp->f_flags |= F_OSPRD_LOCKED;
 					d->read_locks++;
 
+					//remove from read_wait_pid array
 					for(x=0; x < MAX_LOCKS; x++)
 					{
 						if(d->read_wait_pid[x] == current->pid)
@@ -416,12 +436,14 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 				else if(cmd== OSPRDIOCACQUIRE)
 				{
 					int o_slot = -1;
+					//add to read_wait_pid
 					for(x = 0; x < MAX_LOCKS; x++)
 					{
 						if((o_slot==-1) && (d->read_wait_pid[x] == 0))
 						{
 							o_slot = x;
 						}
+						//check if already on the array
 						if(d->read_wait_pid[x]==current->pid)
 						{
 							x=-1;
@@ -437,14 +459,17 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 			
 			if(cmd == OSPRDIOCACQUIRE)
 			{
+				//check if deadlocked
 				if(osprd_detect_deadlock() == -1)
 				{
+					//unlock process
 					osp_spin_unlock(&d->mutex);
 					return -EDEADLK;
 				}
 		
 				int wait_result = wait_event_interruptible(d->blockq, 1);
 	
+				//unlock process
 				osp_spin_unlock(&d->mutex);
 				if(wait_result == -ERESTARTSYS)
 				{
@@ -454,6 +479,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 			}
 			else
 			{
+				//unlock
 				osp_spin_unlock(&d->mutex);
 				r = -EBUSY;
 				break;
@@ -485,6 +511,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		// Your code here (instead of the next line).
 		//r = -ENOTTY;
 		
+		//lock
 		osp_spin_lock(&d->mutex);
 
 		//file hasnt been locked the ramdisk
@@ -494,28 +521,34 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 		}
 		else
 		{
+			//if file is open for writing
 			if(filp_writable)
 			{
+				//clear write lock and wake up queue of processes
 				d->write_lock--;
 				d->write_lock_pid=0;
 				wake_up_all(&d->blockq);
 			}
 			else
 			{
+				//clear read locks
 				d->read_locks--;
 				for(x=0; x < MAX_LOCKS; x++)
 				{
-
+					//remove pid from read_hold_pid array
 					if(d->read_hold_pid[x] == current->pid)
 					{
 						d->read_hold_pid[x]=0;
 						break;
 					}
 				}
+				//wake up the queue of processes
 				wake_up_all(&d->blockq);
 			}
+			//clear lock
 			filp->f_flags &= !F_OSPRD_LOCKED;
 		}
+		//unlock processes
 		osp_spin_unlock(&d->mutex);
 	} else
 		r = -ENOTTY; /* unknown command */
