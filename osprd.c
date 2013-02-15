@@ -69,12 +69,12 @@ typedef struct osprd_info {
 	/* HINT: You may want to add additional fields to help
 	         in detecting deadlock. */
 
-	int read_locks;				//number of read locks;
-	int write_lock;				//number of write locks
-	pid_t read_hold_pid[MAX_LOCKS];		//array of pids with a read lock
-	pid_t read_wait_pid[MAX_LOCKS];		//array of pids waiting for a read lock
-	pid_t write_lock_pid;			// write lock pid	0 of no write lock
-	pid_t write_wait_pid[MAX_LOCKS];	//array of pids waiting for a write lock
+	int r_locks;				//number of read locks;
+	int w_locks;				//number of write locks
+	pid_t r_hold[MAX_LOCKS];		//array of pids with a read lock
+	pid_t r_wait[MAX_LOCKS];		//array of pids waiting for a read lock
+	pid_t w_lock;				// write lock pid
+	pid_t w_wait[MAX_LOCKS];		//array of pids waiting for a write lock
 
 
 	// The following elements are used internally; you don't need
@@ -216,12 +216,12 @@ static int osprd_deadlock_check_disk(int disk, int * dir, int dir_index)
 	{	//find held locks
 		p_node = 0;
 		//handle write locks
-		if((x == -1) && osprds[disk].write_lock_pid !=0) {
-			p_node = osprds[disk].write_lock_pid;
+		if((x == -1) && osprds[disk].w_lock !=0) {
+			p_node = osprds[disk].w_lock;
 		}
 		//handle read locks
-		else if(osprds[disk].read_hold_pid != 0) {
-			p_node = osprds[disk].read_hold_pid[x];
+		else if(osprds[disk].r_hold[x] != 0) {
+			p_node = osprds[disk].r_hold[x];
 		}
 	}
 	
@@ -250,7 +250,7 @@ static int osprd_deadlock_check_process(pid_t p_node, int* dir, int dir_index)
 		for(y = 0; y < MAX_LOCKS; y++) {
 			disk = -1;
 			//search for process
-			if((osprds[x].write_wait_pid[y] == p_node) || (osprds[x].read_wait_pid[y] == p_node)){
+			if((osprds[x].w_wait[y] == p_node) || (osprds[x].r_wait[y] == p_node)){
 				disk = x;
 			}
 		
@@ -360,19 +360,19 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 			//file is writable, attempt to write lock
 			if(filp_writable)
 			{
-				if(d->write_lock==0 && d->read_locks==0)
+				if(d->w_locks ==0 && d->r_locks==0)
 				{
 					//set write lock
-					d->write_lock_pid = current->pid;
+					d->w_lock = current->pid;
 					filp->f_flags |= F_OSPRD_LOCKED;
-					d->write_lock++;
+					d->w_locks++;
 
 					//remove from write_wait_pid
 					for(x = 0; x < MAX_LOCKS; x++)
 					{
-						if(d->write_wait_pid[x] == current->pid)
+						if(d->w_wait[x] == current->pid)
 						{
-							d->write_wait_pid[x] = 0;
+							d->w_wait[x] = 0;
 							break;
 						}
 					}
@@ -387,17 +387,17 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 					//add to write_wait_pid array
 					for(x = 0; x < MAX_LOCKS; x++)
 					{
-						if((o_slot == -1) && (d->write_wait_pid[x] == 0 ))
+						if((o_slot == -1) && (d->w_wait[x] == 0 ))
 						{
 							o_slot = x;
 						}
-						if(d->write_wait_pid[x] == current->pid) {
+						if(d->w_wait[x] == current->pid) {
 							x= -1;
 							break;
 						}
 					}
 					if(x != -1){
-						d->write_wait_pid[o_slot] = current->pid;
+						d->w_wait[o_slot] = current->pid;
 					}
 				}
 
@@ -405,26 +405,26 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 			//attempt to read a lock
 			else {
 				//obtain read lock
-				if(d->write_lock == 0)
+				if(d->w_locks == 0)
 				{
 					//add to read_hold_pid array
 					for(x=0; x < MAX_LOCKS; x++)
 					{
-						if(d->read_hold_pid[x]==0)
+						if(d->r_hold[x]==0)
 						{
-							d->read_hold_pid[x] = current->pid;
+							d->r_hold[x] = current->pid;
 							break;
 						}
 					}
 					filp->f_flags |= F_OSPRD_LOCKED;
-					d->read_locks++;
+					d->r_locks++;
 
 					//remove from read_wait_pid array
 					for(x=0; x < MAX_LOCKS; x++)
 					{
-						if(d->read_wait_pid[x] == current->pid)
+						if(d->r_wait[x] == current->pid)
 						{
-							d->read_wait_pid[x] = 0;
+							d->r_wait[x] = 0;
 							break;
 						}
 					}
@@ -439,12 +439,12 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 					//add to read_wait_pid
 					for(x = 0; x < MAX_LOCKS; x++)
 					{
-						if((o_slot==-1) && (d->read_wait_pid[x] == 0))
+						if((o_slot==-1) && (d->r_wait[x] == 0))
 						{
 							o_slot = x;
 						}
 						//check if already on the array
-						if(d->read_wait_pid[x]==current->pid)
+						if(d->r_wait[x]==current->pid)
 						{
 							x=-1;
 							break;
@@ -452,7 +452,7 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 					}
 					if( x != -1)
 					{
-						d->read_wait_pid[o_slot] = current->pid;
+						d->r_wait[o_slot] = current->pid;
 					}
 				}
 			}
@@ -525,20 +525,20 @@ int osprd_ioctl(struct inode *inode, struct file *filp,
 			if(filp_writable)
 			{
 				//clear write lock and wake up queue of processes
-				d->write_lock--;
-				d->write_lock_pid=0;
+				d->w_locks--;
+				d->w_lock=0;
 				wake_up_all(&d->blockq);
 			}
 			else
 			{
 				//clear read locks
-				d->read_locks--;
+				d->r_locks--;
 				for(x=0; x < MAX_LOCKS; x++)
 				{
 					//remove pid from read_hold_pid array
-					if(d->read_hold_pid[x] == current->pid)
+					if(d->r_hold[x] == current->pid)
 					{
-						d->read_hold_pid[x]=0;
+						d->r_hold[x]=0;
 						break;
 					}
 				}
@@ -565,14 +565,14 @@ static void osprd_setup(osprd_info_t *d)
 	osp_spin_lock_init(&d->mutex);
 	d->ticket_head = d->ticket_tail = 0;
 	/* Add code here if you add fields to osprd_info_t. */
-	d->read_locks = 0;
-	d->write_lock = 0;
+	d->r_locks = 0;
+	d->w_locks = 0;
 	int x;
 	for(x =0; x < MAX_LOCKS; x++)
 	{
-		d->read_hold_pid[x]=0;
-		d->read_wait_pid[x]=0;
-		d->write_wait_pid[x] = 0;
+		d->r_hold[x]=0;
+		d->r_wait[x]=0;
+		d->w_wait[x] = 0;
 	}
 }
 
